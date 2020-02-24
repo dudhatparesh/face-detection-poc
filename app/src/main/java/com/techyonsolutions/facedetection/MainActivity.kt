@@ -4,10 +4,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.os.Bundle
-import android.os.HandlerThread
 import android.util.Log
 import android.util.Size
 import android.view.Surface
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.Toast
@@ -16,8 +16,6 @@ import androidx.camera.core.*
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.tasks.OnFailureListener
-import com.google.android.gms.tasks.OnSuccessListener
-import com.google.firebase.ml.vision.face.FirebaseVisionFace
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.File
 import java.util.concurrent.Executors
@@ -32,12 +30,10 @@ private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 
 class MainActivity : AppCompatActivity() {
 
-    val successListener = OnSuccessListener<List<FirebaseVisionFace>>{
-
-    }
     val failureListener = OnFailureListener {
 
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -48,7 +44,11 @@ class MainActivity : AppCompatActivity() {
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
-
+        btn_retake.setOnClickListener {
+            iv_image.visibility = View.GONE
+            CameraX.unbindAll()
+            startCamera()
+        }
         view_finder.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateTransform()
         }
@@ -58,8 +58,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun startCamera() {
         // Create configuration object for the viewfinder use case
+        view_finder.visibility = View.VISIBLE
+        val lensFacing = if (facingSwitch.isChecked) CameraX.LensFacing.FRONT else CameraX.LensFacing.BACK
         val previewConfig = PreviewConfig.Builder().apply {
             setTargetResolution(Size(640, 480))
+            setLensFacing(lensFacing)
         }.build()
         val preview = Preview(previewConfig)
 
@@ -88,7 +91,15 @@ class MainActivity : AppCompatActivity() {
 
         // Build the image capture use case and attach button click listener
         val imageCapture = ImageCapture(imageCaptureConfig)
-        findViewById<ImageButton>(R.id.capture_button).setOnClickListener {
+        if(CameraX.hasCameraWithLensFacing(CameraX.LensFacing.FRONT)){
+            facingSwitch.visibility = View.VISIBLE
+        }
+        facingSwitch.setOnCheckedChangeListener { buttonView, isChecked ->
+            view_finder.visibility = View.GONE
+            CameraX.unbindAll()
+            startCamera()
+        }
+        btn_next.setOnClickListener {
             val file = File(
                 externalMediaDirs.first(),
                 "${System.currentTimeMillis()}.jpg"
@@ -122,22 +133,25 @@ class MainActivity : AppCompatActivity() {
 
         // Setup image analysis pipeline that computes average pixel luminance
         val analyzerConfig = ImageAnalysisConfig.Builder().apply {
-            // In our analysis, we care more about the latest image than
-            // analyzing *every* image
+            setLensFacing(lensFacing)
             setImageReaderMode(
-                ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE)
+                ImageAnalysis.ImageReaderMode.ACQUIRE_LATEST_IMAGE
+            )
 
         }.build()
 
         // Build the image analysis use case and instantiate our analyzer
         val analyzerUseCase = ImageAnalysis(analyzerConfig).apply {
-            setAnalyzer(executor, FaceAnalyzer())
+            setAnalyzer(executor, FaceAnalyzer({ image ->
+                iv_image.visibility = View.VISIBLE
+                iv_image.setImageBitmap(image)
+            }, failureListener))
         }
         // Bind use cases to lifecycle
         // If Android Studio complains about "this" being not a LifecycleOwner
         // try rebuilding the project or updating the appcompat dependency to
         // version 1.1.0 or higher.
-        CameraX.bindToLifecycle(this, preview, imageCapture, analyzerUseCase)
+        CameraX.bindToLifecycle(this, preview, analyzerUseCase)
     }
 
     private fun updateTransform() {
