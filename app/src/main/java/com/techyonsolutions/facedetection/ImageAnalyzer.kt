@@ -13,9 +13,11 @@ import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetectorOptions
 import com.google.firebase.ml.vision.face.FirebaseVisionFaceDetectorOptions.ALL_CLASSIFICATIONS
 import java.io.ByteArrayOutputStream
 
+
 class FaceAnalyzer(
-    val onFaceDetected: (Bitmap) -> Unit,
-    val failureListener: OnFailureListener
+    private val onFaceDetected: (Bitmap) -> Unit,
+    private val failureListener: OnFailureListener,
+    private val container: Rect
 ) : ImageAnalysis.Analyzer {
     var analyze = true
     private val faceDetector: FirebaseVisionFaceDetector by lazy {
@@ -36,9 +38,11 @@ class FaceAnalyzer(
             FirebaseVisionImage.fromMediaImage(cameraImage, getRotationConstant(rotationDegrees))
         faceDetector.detectInImage(firebaseVisionImage)
             .addOnSuccessListener { faces ->
-                if (analyze && faces.size == 1 && faces[0].smilingProbability > 0.8 && faces[0].leftEyeOpenProbability > 0.7 && faces[0].rightEyeOpenProbability > 0.7) {
+                if (analyze && faces.size == 1
+                    && container.contains(faces[0].boundingBox)
+                ) {
                     analyze = false
-                    onFaceDetected.invoke(firebaseVisionImage.bitmap)
+                    onFaceDetected.invoke(firebaseVisionImage.bitmap.flip())
                 }
             }
             .addOnFailureListener(failureListener)
@@ -76,4 +80,13 @@ fun Image.toBitmap(): Bitmap {
     yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 50, out)
     val imageBytes = out.toByteArray()
     return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+}
+
+fun Bitmap.flip(): Bitmap {
+    // create new matrix for transformation
+    val matrix = Matrix()
+    matrix.preScale(-1.0f, 1.0f)
+
+    // return transformed image
+    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
 }

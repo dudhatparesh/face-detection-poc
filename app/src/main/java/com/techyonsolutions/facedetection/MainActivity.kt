@@ -3,6 +3,7 @@ package com.techyonsolutions.facedetection
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
@@ -139,13 +140,14 @@ class MainActivity : AppCompatActivity() {
             )
 
         }.build()
-
+        val rect = Rect()
+        iv_container.getDrawingRect(rect)
         // Build the image analysis use case and instantiate our analyzer
         val analyzerUseCase = ImageAnalysis(analyzerConfig).apply {
             setAnalyzer(executor, FaceAnalyzer({ image ->
                 iv_image.visibility = View.VISIBLE
                 iv_image.setImageBitmap(image)
-            }, failureListener))
+            }, failureListener,rect))
         }
         // Bind use cases to lifecycle
         // If Android Studio complains about "this" being not a LifecycleOwner
